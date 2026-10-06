@@ -1,0 +1,19 @@
+name = "AldousLyonsComparator"
+defaultTargets = ["Challenge", "Solution"]
+
+# The options MIPRE-formalization builds its own statement files with.
+[leanOptions]
+pp.unicode.fun = true
+autoImplicit = false
+relaxedAutoImplicit = false
+
+[[require]]
+name = "MIPRE"
+git = "https://github.com/vidick/MIPRE-formalization.git"
+rev = "6d1962e2a70b85461912c684526fafb71e177b2d"
+
+[[lean_lib]]
+name = "Challenge"
+
+[[lean_lib]]
+name = "Solution"
