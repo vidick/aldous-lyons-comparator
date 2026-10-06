@@ -34,32 +34,22 @@ theorem with `≤ 1/2`, as stated here.
 
 ## What to audit
 
-Only [`Challenge.lean`](Challenge.lean), which imports **only Mathlib**. It has three parts.
+Only [`Challenge.lean`](Challenge.lean), which imports **only Mathlib**. It is about 400 lines,
+half of them docstrings, in two parts.
 
-* **`HaltingGameValue`**: synchronous games, synchronous strategies and the synchronous value,
-  first-order game descriptions, `HaltsOnEmptyInput`. This is the library's statement file
-  `MIPRE/HaltingGameValue.lean` without its final definition, the statement of
-  "MIP\* = RE", which is not used here. The same definitions make up the challenge of
-  [`vidick/mipre-comparator`](https://github.com/vidick/mipre-comparator).
-* **`TailoredGameValue`**: tailored games, Z-aligned permutation strategies commuting along edges,
-  and the statement `TailoredHaltingReduction`. This is the library's statement file
-  `MIPRE/TailoredGameValue.lean`, verbatim, with Challenge 1 appended.
+* **`TailoredGames`**: synchronous games and strategies and the synchronous value; tailored game
+  descriptions and the game they describe; Z-aligned permutation strategies commuting along
+  edges; the statement `TailoredHaltingReduction`; Challenge 1.
 * **`AldousLyons`**: the space of subgroups of a free group with the product topology, invariant
-  random subgroups, the finitely described ones, the conjecture, and Challenge 2. Read it in full:
-  it is about 75 lines.
+  random subgroups, the finitely described ones, the conjecture; Challenge 2.
 
-The first two parts can be checked against the library mechanically, at the commit pinned in
-[`lakefile.toml`](lakefile.toml):
-
-```bash
-SRC=https://raw.githubusercontent.com/vidick/MIPRE-formalization/6d1962e2a70b85461912c684526fafb71e177b2d/MIPRE
-part() { sed -n "/^namespace $1/,/^end $1/p"; }
-diff <(curl -sL $SRC/HaltingGameValue.lean | part HaltingGameValue) <(part HaltingGameValue < Challenge.lean)
-diff <(curl -sL $SRC/TailoredGameValue.lean | part TailoredGameValue) <(part TailoredGameValue < Challenge.lean)
-```
-
-The first diff shows only the removed final definition and its section title; the second, only
-the appended theorem.
+The definitions are the library's own, from its Mathlib-only statement files
+`MIPRE/TailoredGameValue.lean`, `MIPRE/HaltingGameValue.lean` and `MIPRE/SubgroupTestValue.lean`,
+repackaged for a reader: a synchronous strategy is given by its measurement operators directly
+(self-adjoint idempotent matrices summing to the identity, so positivity is not a separate
+axiom), the question weights of a tailored game are normalized in place, and a finite action of
+a free group is a tuple of permutations rather than a structure. The tailored game and the
+permutation strategies are the library's text verbatim.
 
 If you believe `Challenge.lean` says the intended theorems, then a successful comparator run
 certifies that the library proves them using only the standard axioms:
@@ -68,15 +58,17 @@ certifies that the library proves them using only the standard axioms:
 propext, Quot.sound, Classical.choice
 ```
 
-[`Solution.lean`](Solution.lean) imports `MIPRE.TailoredMIP` from the library.
-
-* Challenge 1 is proved there under its own name, so the Solution restates nothing.
-* For Challenge 2, the Solution repeats the `AldousLyons` definitions verbatim. It transports
-  the library's `SubgroupTestValue.aldous_lyons_false` to them: the library packages a finite
-  action as a structure, and the two sets of finitely described IRSs are equal.
+[`Solution.lean`](Solution.lean) imports the library and repeats every definition of
+`Challenge.lean` verbatim (the comparator checks that they are identical in the two environments).
+It then proves the two theorems from the library's `TailoredGameValue.tailored_halting_reduction`
+and `SubgroupTestValue.aldous_lyons_false` by transport: the Challenge's synchronous value is the
+library's (`gameValue_eq_syncValue`), a library game description and its Challenge reading are the
+same game with the same permutation strategies (both by `rfl`), and the two sets of finitely
+described IRSs are equal. The transport proofs are about 60 lines and are themselves checked by
+the comparator, so they need not be trusted.
 
 The comparator builds both modules in a `bwrap` sandbox. For `Solution`, that means compiling the
-library from source at the pinned commit. It then:
+library from source at the commit pinned in [`lakefile.toml`](lakefile.toml). It then:
 
 1. exports both modules with `leanexport`;
 2. checks that each theorem's statement, and every declaration it uses, is identical in the two

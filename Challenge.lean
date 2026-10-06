@@ -1,5 +1,5 @@
 /-
-# The Aldous–Lyons conjecture is false, and `TMIP* = RE`
+# `TMIP* = RE`, and the Aldous–Lyons conjecture is false
 
 This file states, on top of Mathlib alone, the two main results of
 
@@ -10,90 +10,94 @@ This file states, on top of Mathlib alone, the two main results of
 
 each as a theorem left `sorry`:
 
-1. `TailoredGameValue.tailored_halting_reduction` — paper II's main theorem: a computable map
-   from Turing machines to *tailored* non-local games sending halting machines to games with a
+1. `TailoredGames.tailored_halting_reduction` — paper II's main theorem: a computable map from
+   Turing machines to *tailored* non-local games sending halting machines to games with a
    perfect Z-aligned permutation strategy commuting along edges, and the other machines to
    games of synchronous value at most `1/2`. In particular the synchronous value of tailored
    games is uncomputable.
 2. `AldousLyons.aldousLyonsConjecture_false` — the Aldous–Lyons conjecture, for invariant random
    subgroups of free groups, is false.
 
-The file has three parts.
-
-* `HaltingGameValue`: synchronous games, synchronous strategies and the synchronous value
-  `gameValue`, first-order game descriptions `GameData`, and `HaltsOnEmptyInput`. This is the
-  statement file `MIPRE/HaltingGameValue.lean` of MIPRE-formalization without its final
-  definition (the statement of "MIP* = RE", not used here); it is also the challenge of
-  `vidick/mipre-comparator`.
-* `TailoredGameValue`: tailored games, ZPC strategies and the statement
-  `TailoredHaltingReduction`. This is `MIPRE/TailoredGameValue.lean`, verbatim, with Challenge 1
-  appended.
-* `AldousLyons`: the space of subgroups of a free group, invariant random subgroups, the
-  finitely described ones, and the conjecture; then Challenge 2.
+The file has two parts, `TailoredGames` and `AldousLyons`, each with its own introduction.
 
 The model of computation is Mathlib's `Nat.Partrec.Code`, "halts on the empty input" is
-`(c.eval 0).Dom`, and "computable" is Mathlib's `Computable`. The papers' reductions run in
-polynomial time; the statement asks only that they be computable.
+`(c.eval 0).Dom`, and "computable" is Mathlib's `Computable`. Paper II's reduction runs in
+polynomial time; the statement asks only that it be computable.
 -/
 
 module
-public import Mathlib.Analysis.Matrix.Order
 public import Mathlib.Computability.PartrecCode
 public import Mathlib.LinearAlgebra.Matrix.IsDiag
+public import Mathlib.LinearAlgebra.Matrix.Trace
+public import Mathlib.Analysis.Complex.Basic
+public import Mathlib.Algebra.Order.Archimedean.Real.Basic
 public import Mathlib.GroupTheory.FreeGroup.Basic
 public import Mathlib.MeasureTheory.Measure.ProbabilityMeasure
 public import Mathlib.Topology.Instances.Discrete
--- The tactics the proofs inside the definitions use (MIPRE-formalization's `MIPRE/Tactics.lean`).
+-- The tactics the proofs inside the definitions use.
 public import Mathlib.Tactic.Common
 public import Mathlib.Tactic.NormNum
-public import Mathlib.Tactic.Linarith
 public import Mathlib.Tactic.Positivity
-public import Mathlib.Tactic.Ring
-public import Mathlib.Tactic.FieldSimp
-public import Mathlib.Tactic.GCongr
-public import Mathlib.Tactic.Abel
-public import Mathlib.Tactic.NoncommRing
-public import Mathlib.Tactic.Module
-public import Mathlib.Tactic.Bound
-public import Mathlib.Tactic.FinCases
-public import Mathlib.Tactic.IntervalCases
-public import Mathlib.Tactic.Continuity
-public import Mathlib.Tactic.Measurability
-public import Mathlib.Tactic.FunProp
-public import Mathlib.Tactic.Group
-public import Mathlib.Tactic.Tauto
-public import Mathlib.Tactic.Zify
-public import Mathlib.Tactic.Qify
-public import Mathlib.Tactic.Rify
-public import Mathlib.Tactic.Peel
 
 @[expose] public section
 
-namespace HaltingGameValue
+/-! ## Part 1: tailored games and `TMIP* = RE`
 
-/- The Loewner order on matrices (`0 ≤ A ↔ A.PosSemidef`) is scoped. -/
-open scoped MatrixOrder
+Paper II's main theorem, `thm:tailored_MIP*=RE` (II:1505; line numbers `II:n` refer to the arXiv
+LaTeX source): there is a computable map from Turing machines to *tailored* non-local games that
+sends halting machines to games with a perfect *Z-aligned permutation strategy commuting along
+edges* (ZPC) and non-halting machines to games of value at most `1/2`. The definitions:
 
-/-! ## POVMs -/
+* `SynchronousGame`, `SyncStrategy`, `strategyValue`, `gameValue`: two-player one-round
+  synchronous games (both players draw from the same question and answer alphabets, and unequal
+  answers to equal questions lose); synchronous strategies, which are finite-dimensional quantum
+  strategies given by one projective measurement per question, with outcome probabilities
+  `Tr(P^x_a P^y_b) / d`; and the synchronous value, the supremum of the winning probability over
+  all of them. The soundness clause is stated in this value, which bounds every finite-dimensional
+  strategy.
+* `TailoredGameData` (paper: tailored games, II:1243): a first-order description of a game with
+  vertices `Fin (nV + 1)`, at each vertex `x` a set `S_x` of `ℓ^R(x)` *readable* and `ℓ^L(x)`
+  *linear* formal variables, edge weights, and *controlled linear constraints*: for an edge `xy`
+  and a value `γ^R` of the readable variables, a list `L_xy(γ^R)` of vectors `c` over
+  `S_x ⊔ S_y ⊔ {J}`.
+* `TailoredGameData.toGame`: its interpretation as a `SynchronousGame`. The answers are bit
+  vectors of the maximal length `Λ`; an answer at `x` must vanish beyond `ℓ(x) = ℓ^R(x) + ℓ^L(x)`,
+  and the answer pair `(a, b)` at `xy` is accepted by the paper's *canonical decider*
+  (II:1757–1787): every `c ∈ L_xy(a^R b^R)` satisfies `⟨c, a b 1⟩ = 0`, where `J` is the affine
+  coordinate, set to `1`. The empty list accepts and the list `[J]` rejects.
+* `PermStrategy`, `HasPerfectZPC` (paper: II:1043–1057, II:1279–1283): a strategy whose
+  observables are signed permutation matrices — one per formal variable, involutions, commuting
+  at each vertex — with diagonal observables for the readable variables (*Z-aligned*), commuting
+  across every edge of positive weight (*commuting along edges*); its measurements are the
+  Fourier transforms `P^x_a = ∏_i (1 + (-1)^{a_i} U(x, i)) / 2`, and it is *perfect* when its
+  value is `1`.
+* `HaltsOnEmptyInput`, `TailoredHaltingReduction`: the statement.
 
-/-- A POVM is a (finite) collection of PSD matrices on the same Hilbert space
-that sum to the identity. Here `X` indexes the matrices, and `d` is the space
-dimension.
+Two conventions differ from the paper's text and are equivalent to it:
 
-This is the QuantumLib (Lean-QuantumInfo) definition of `POVM`, with
-`selfAdjoint (Matrix d d ℂ)` spelled out for its definitionally equal
-`HermitianMat d ℂ`; `0 ≤ mats x` is the Loewner order, i.e. positive
-semidefiniteness. -/
-structure POVM (X : Type*) (d : Type*) [Fintype X] [Fintype d] [DecidableEq d] where
-  mats : X → selfAdjoint (Matrix d d ℂ)
-  nonneg : ∀ x, 0 ≤ mats x
-  normalized : ∑ x, mats x = 1
+* **Loops.** At a loop `xx` the paper's decision reads one answer, over `S_x`. Here, as in the
+  paper's tailored normal form verifiers, whose canonical decider is always given two answers, it
+  reads the pair `(a, a)` — unequal answers at a loop lose, which is what makes the game
+  synchronous — so a constraint over `S_x ⊔ S_x ⊔ {J}` evaluated at `(a, a)`; a one-copy
+  constraint `(c, c_J)` is the two-copy constraint `(c, 0, c_J)`, and a two-copy constraint
+  `(c₁, c₂, c_J)` acts as the one-copy constraint `(c₁ + c₂, c_J)`.
+* **One answer alphabet.** The paper's answers at `x` are `F₂^{S_x}`; here they are the bit
+  vectors of length `Λ = max_x ℓ(x)` that vanish beyond `ℓ(x)`, and the generators beyond `ℓ(x)`
+  of a permutation strategy act as the identity. A strategy for the paper's game and one for this
+  game determine each other by padding with zeros and truncating, with the same value; a ZPC
+  strategy and its padding by identities likewise.
 
-/-! ## Synchronous games -/
+Clause (3) of the paper's theorem reads `val*(G_M) < 1/2`; its proof (II:2046–2065) shows that
+every finite-dimensional strategy has value `< 1/2`, which bounds the supremum by `1/2` only, and
+paper I uses the theorem with `≤ 1/2` (I:2140). The statement below has `≤ 1/2`.
+-/
 
-/-- A synchronous game: both players receive questions from the same alphabet
-and answer from the same alphabet; on equal questions, unequal answers always
-lose. -/
+namespace TailoredGames
+
+/-! ### Synchronous games and the synchronous value -/
+
+/-- A synchronous game: both players receive questions from the same alphabet and answer from the
+same alphabet; on equal questions, unequal answers always lose. -/
 structure SynchronousGame (X A : Type*) [Fintype X] [Fintype A] [DecidableEq A] where
   μ : X → X → ℝ
   μ_nonneg : ∀ x y, 0 ≤ μ x y
@@ -103,133 +107,41 @@ structure SynchronousGame (X A : Type*) [Fintype X] [Fintype A] [DecidableEq A] 
 
 variable {X A : Type*} [Fintype X] [Fintype A] [DecidableEq A]
 
-/-! ## Synchronous strategies -/
-
-/-- A synchronous strategy for a synchronous game: a finite-dimensional
-strategy with a single question-indexed projective measurement family. The
-operators act on `ℂ^d` (`d > 0`); each measurement operator is idempotent,
-hence (being positive semidefinite) an orthogonal projection. Measurements for
-different questions need not commute. There is no state vector: outcome
-probabilities are computed with the dimension-normalized trace
+/-- A synchronous strategy for a synchronous game: a finite-dimensional quantum strategy with a
+single question-indexed projective measurement family. The operators act on `ℂ^d` (`d > 0`); for
+each question `x` the measurement operators `P x a` are self-adjoint idempotent matrices (so
+orthogonal projections) summing to the identity. Measurements for different questions need not
+commute. There is no state vector: outcome probabilities are computed with the normalized trace
 `τ(M) = Tr(M)/d` (see `strategyValue`). -/
 structure SyncStrategy (G : SynchronousGame X A) where
   d : ℕ
   d_pos : 0 < d
-  povm : X → POVM A (Fin d)
-  projective : ∀ x a,
-    ((povm x).mats a).val * ((povm x).mats a).val = ((povm x).mats a).val
+  P : X → A → Matrix (Fin d) (Fin d) ℂ
+  selfAdjoint : ∀ x a, star (P x a) = P x a
+  projective : ∀ x a, P x a * P x a = P x a
+  normalized : ∀ x, ∑ a, P x a = 1
 
-/-! ## Game value -/
-
-/-- The winning probability of a synchronous strategy: the players answer
-questions `(x, y)` with `(a, b)` with probability `Tr(M^x_a M^y_b)/d`.
-For positive semidefinite matrices this trace is a nonnegative real; we
-take the real part so that the definition typechecks with no proof
-obligations. -/
+/-- The winning probability of a synchronous strategy: the players answer questions `(x, y)` with
+`(a, b)` with probability `Tr(P^x_a P^y_b)/d`. This trace is a nonnegative real; the real part is
+taken so that the definition typechecks with no proof obligation. -/
 noncomputable def strategyValue (G : SynchronousGame X A) (S : SyncStrategy G) : ℝ :=
   ∑ x, ∑ y, ∑ a, ∑ b,
-    G.μ x y * (if G.D x y a b then 1 else 0) *
-      ((((S.povm x).mats a).val * ((S.povm y).mats b).val).trace.re / (S.d : ℝ))
+    G.μ x y * (if G.D x y a b then 1 else 0) * ((S.P x a * S.P y b).trace.re / (S.d : ℝ))
 
-/-- The synchronous value of a synchronous game: the supremum of winning
-probabilities over all synchronous strategies. -/
+/-- The synchronous value of a synchronous game: the supremum of the winning probability over all
+synchronous strategies. -/
 noncomputable def gameValue (G : SynchronousGame X A) : ℝ :=
   ⨆ S : SyncStrategy G, strategyValue G S
 
-/-! ## Codable game descriptions -/
-
-/-- A first-order description of a synchronous game, suitable for computability
-statements. The question alphabet is `Fin (nX + 1)` and the answer alphabet is
-`Fin (nA + 1)`. The question
-distribution is given by a finite list `w` of unnormalized natural-number
-weights `(x, y, weight)`, and the decision predicate by the list `acc` of
-accepted tuples `(x, y, a, b)`. -/
-structure GameData where
-  nX : ℕ
-  nA : ℕ
-  w : List (ℕ × ℕ × ℕ)
-  acc : List (ℕ × ℕ × ℕ × ℕ)
-
-namespace GameData
-
-/-- `GameData` is just a tuple of naturals and lists. -/
-def equivTuple : GameData ≃ ℕ × ℕ × List (ℕ × ℕ × ℕ) × List (ℕ × ℕ × ℕ × ℕ) where
-  toFun g := (g.nX, g.nA, g.w, g.acc)
-  invFun t := ⟨t.1, t.2.1, t.2.2.1, t.2.2.2⟩
-
-instance : Primcodable GameData := Primcodable.ofEquiv _ equivTuple
-
-/-- Total weight assigned by the list `w` to the question pair `(x, y)`. -/
-def questionWeight (g : GameData) (x y : ℕ) : ℕ :=
-  ((g.w.filter fun t => decide (t.1 = x ∧ t.2.1 = y)).map fun t => t.2.2).sum
-
-/-- Total weight assigned by the list `w` to valid question pairs. -/
-def totalWeight (g : GameData) : ℕ :=
-  ∑ x : Fin (g.nX + 1), ∑ y : Fin (g.nX + 1), g.questionWeight x.val y.val
-
-/-- Interpret a `GameData` as a `SynchronousGame`: normalize the question
-weights (falling back to a point mass on `(0, 0)` when the total weight is
-zero, so that the interpretation is total), and accept exactly the answer
-tuples listed in `acc`, except that unequal answers on equal questions always
-lose. -/
-noncomputable def toGame (g : GameData) :
-    SynchronousGame (Fin (g.nX + 1)) (Fin (g.nA + 1)) where
-  μ x y :=
-    if g.totalWeight = 0 then (if x = 0 ∧ y = 0 then 1 else 0)
-    else (g.questionWeight x.val y.val : ℝ) / (g.totalWeight : ℝ)
-  μ_nonneg x y := by
-    split_ifs
-    · norm_num
-    · norm_num
-    · positivity
-  μ_sum_one := by
-    by_cases h : g.totalWeight = 0
-    · simp only [if_pos h]
-      rw [Finset.sum_eq_single (0 : Fin (g.nX + 1))]
-      · simp
-      · intro b _ hb
-        simp [hb]
-      · intro hmem
-        exact absurd (Finset.mem_univ _) hmem
-    · simp only [if_neg h]
-      have hT : (g.totalWeight : ℝ) ≠ 0 := Nat.cast_ne_zero.mpr h
-      have hsum : ∑ x : Fin (g.nX + 1), ∑ y : Fin (g.nX + 1),
-          (g.questionWeight x.val y.val : ℝ) = (g.totalWeight : ℝ) := by
-        unfold totalWeight
-        push_cast
-        rfl
-      simp_rw [← Finset.sum_div]
-      rw [hsum, div_self hT]
-  D x y a b := if x = y ∧ a ≠ b then false else decide ((x.val, y.val, a.val, b.val) ∈ g.acc)
-  synchronous x a b hne := by
-    simp [hne]
-
-end GameData
-
-/-! ## The halting problem -/
-
-/-- The program `c` halts on the empty input. (`Nat.Partrec.Code` is
-Mathlib's Gödel numbering of partial recursive functions, an equivalent
-model of computation to Turing machines; the empty input is encoded by
-`0`.) -/
-def HaltsOnEmptyInput (c : Nat.Partrec.Code) : Prop := (c.eval 0).Dom
-
-end HaltingGameValue
-
-namespace TailoredGameValue
-
-open HaltingGameValue
-
-/-! ## Descriptions of tailored games -/
+/-! ### Descriptions of tailored games -/
 
 /-- A first-order description of a tailored game (II:1243). The vertices are `Fin (nV + 1)`;
-vertex `x` has `lenR.getD x 0` readable and `lenL.getD x 0` linear formal variables; the
-question distribution is given, as in `HaltingGameValue.GameData`, by a list `w` of
-unnormalized weights `(x, y, weight)`; and the controlled linear constraints by the list
-`cons` of entries `(x, y, γ^R, c)`, read as "`c ∈ L_xy(γ^R)`". Here `γ^R` is the readable part
-of the answer pair (the readable bits of the answer at `x`, then those at `y`) and `c` is a
-vector over `S_x ⊔ S_y ⊔ {J}` (the coefficients on the variables at `x`, readable then linear,
-then those at `y`, then the coefficient of `J`). -/
+vertex `x` has `lenR.getD x 0` readable and `lenL.getD x 0` linear formal variables; the question
+distribution is given by a list `w` of unnormalized natural-number weights `(x, y, weight)`; and
+the controlled linear constraints by the list `cons` of entries `(x, y, γ^R, c)`, read as
+"`c ∈ L_xy(γ^R)`". Here `γ^R` is the readable part of the answer pair (the readable bits of the
+answer at `x`, then those at `y`) and `c` is a vector over `S_x ⊔ S_y ⊔ {J}` (the coefficients on
+the variables at `x`, readable then linear, then those at `y`, then the coefficient of `J`). -/
 structure TailoredGameData where
   nV : ℕ
   lenR : List ℕ
@@ -285,9 +197,9 @@ def Satisfies (c v : List Bool) : Prop :=
 instance (c v : List Bool) : Decidable (Satisfies c v) := by
   unfold Satisfies; infer_instance
 
-/-- The canonical decider (II:1757–1787) at the question pair `(x, y)`: unequal answers at a
-loop lose; both answers are well formatted; and every constraint `c ∈ L_xy(a^R b^R)` is
-satisfied by `a b 1`, the two full answers followed by the coordinate `J = 1`. -/
+/-- The canonical decider (II:1757–1787) at the question pair `(x, y)`: unequal answers at a loop
+lose; both answers are well formatted; and every constraint `c ∈ L_xy(a^R b^R)` is satisfied by
+`a b 1`, the two full answers followed by the coordinate `J = 1`. -/
 def Accepts (x y : Fin (g.nV + 1)) (a b : Fin g.ansLen → Bool) : Prop :=
   (x = y → a = b) ∧ g.WellFormatted x a ∧ g.WellFormatted y b ∧
     ∀ e ∈ g.cons, e.1 = x.val → e.2.1 = y.val → e.2.2.1 = g.readable x a ++ g.readable y b →
@@ -296,23 +208,52 @@ def Accepts (x y : Fin (g.nV + 1)) (a b : Fin g.ansLen → Bool) : Prop :=
 instance (x y : Fin (g.nV + 1)) (a b : Fin g.ansLen → Bool) : Decidable (g.Accepts x y a b) := by
   unfold Accepts WellFormatted; infer_instance
 
-/-- The question distribution: the weights `w` normalized as in `HaltingGameValue.GameData`. -/
-noncomputable def weights : GameData := ⟨g.nV, 0, g.w, []⟩
+/-- The total weight the list `w` assigns to the question pair `(x, y)`. -/
+def questionWeight (x y : ℕ) : ℕ :=
+  ((g.w.filter fun t => decide (t.1 = x ∧ t.2.1 = y)).map fun t => t.2.2).sum
 
-/-- Interpret a `TailoredGameData` as a `SynchronousGame`: questions are vertices, answers are
-bit vectors of length `Λ`, the distribution is that of the weights, and acceptance is the
-canonical decider's. -/
+/-- The total weight the list `w` assigns to valid question pairs. -/
+def totalWeight : ℕ :=
+  ∑ x : Fin (g.nV + 1), ∑ y : Fin (g.nV + 1), g.questionWeight x.val y.val
+
+/-- Interpret a `TailoredGameData` as a `SynchronousGame`: questions are vertices, answers are bit
+vectors of length `Λ`, the distribution normalizes the weights (falling back to a point mass on
+`(0, 0)` when the total weight is zero, so that the interpretation is total), and acceptance is
+the canonical decider's. -/
 noncomputable def toGame : SynchronousGame (Fin (g.nV + 1)) (Fin g.ansLen → Bool) where
-  μ := g.weights.toGame.μ
-  μ_nonneg := g.weights.toGame.μ_nonneg
-  μ_sum_one := g.weights.toGame.μ_sum_one
+  μ x y :=
+    if g.totalWeight = 0 then (if x = 0 ∧ y = 0 then 1 else 0)
+    else (g.questionWeight x.val y.val : ℝ) / (g.totalWeight : ℝ)
+  μ_nonneg x y := by
+    split_ifs
+    · norm_num
+    · norm_num
+    · positivity
+  μ_sum_one := by
+    by_cases h : g.totalWeight = 0
+    · simp only [h, ↓reduceIte]
+      rw [Finset.sum_eq_single (0 : Fin (g.nV + 1))]
+      · simp
+      · intro b _ hb
+        simp [hb]
+      · intro hmem
+        exact absurd (Finset.mem_univ _) hmem
+    · simp only [h, ↓reduceIte]
+      have hT : (g.totalWeight : ℝ) ≠ 0 := Nat.cast_ne_zero.mpr h
+      have hsum : ∑ x : Fin (g.nV + 1), ∑ y : Fin (g.nV + 1),
+          (g.questionWeight x.val y.val : ℝ) = (g.totalWeight : ℝ) := by
+        unfold totalWeight
+        push_cast
+        rfl
+      simp_rw [← Finset.sum_div]
+      rw [hsum, div_self hT]
   D x y a b := decide (g.Accepts x y a b)
   synchronous x a b hne := by
     simp [Accepts, hne]
 
 end TailoredGameData
 
-/-! ## Z-aligned permutation strategies commuting along edges -/
+/-! ### Z-aligned permutation strategies commuting along edges -/
 
 /-- The signed permutation matrix `e_j ↦ (-1)^{s j} e_{σ j}` (II:1043–1053): the action of the
 signed permutation `(σ, s)` of `Ω_± = {±} × Fin m` on the anti-symmetric functions, in their
@@ -324,11 +265,11 @@ def signedPermMatrix {m : ℕ} (σ : Equiv.Perm (Fin m)) (s : Fin m → Bool) :
 variable (g : TailoredGameData)
 
 /-- A permutation strategy for a tailored game (II:1056, II:1115): on `ℂ^m`, one observable
-`U x i` for each variable `i` at each vertex `x`, a signed permutation matrix and an
-involution, the observables at a vertex commuting; the variables beyond `ℓ(x)` act as the
-identity (§ "One answer alphabet" of the module docstring). It is *Z-aligned* when the
-observables of the readable variables are diagonal and *commutes along edges* when the
-observables at the two ends of every edge of positive weight commute (II:1279–1283). -/
+`U x i` for each variable `i` at each vertex `x`, a signed permutation matrix and an involution,
+the observables at a vertex commuting; the variables beyond `ℓ(x)` act as the identity ("One
+answer alphabet" above). It is *Z-aligned* when the observables of the readable variables are
+diagonal and *commutes along edges* when the observables at the two ends of every edge of
+positive weight commute (II:1279–1283). -/
 structure PermStrategy where
   /-- The dimension. -/
   m : ℕ
@@ -353,8 +294,8 @@ noncomputable def proj (x : Fin (g.nV + 1)) (a : Fin g.ansLen → Bool) :
   ((List.finRange g.ansLen).map fun i =>
     (1 / 2 : ℂ) • (1 + (if a i then (-1 : ℂ) else 1) • S.U x i)).prod
 
-/-- The value of a permutation strategy, defined as `HaltingGameValue.strategyValue` defines
-the value of a synchronous strategy: the players answer `(x, y)` with `(a, b)` with probability
+/-- The value of a permutation strategy, defined as `strategyValue` defines the value of a
+synchronous strategy: the players answer `(x, y)` with `(a, b)` with probability
 `Tr(P^x_a P^y_b) / m`. -/
 noncomputable def value : ℝ :=
   ∑ x, ∑ y, ∑ a, ∑ b,
@@ -366,18 +307,20 @@ end PermStrategy
 /-- The game has a perfect Z-aligned permutation strategy commuting along edges (II:1279). -/
 def TailoredGameData.HasPerfectZPC : Prop := ∃ S : PermStrategy g, S.value = 1
 
-/-! ## The halting problem and `TMIP* = RE` -/
+/-! ### The halting problem and `TMIP* = RE` -/
+
+/-- The program `c` halts on the empty input. (`Nat.Partrec.Code` is Mathlib's Gödel numbering of
+partial recursive functions, an equivalent model of computation to Turing machines; the empty
+input is encoded by `0`.) -/
+def HaltsOnEmptyInput (c : Nat.Partrec.Code) : Prop := (c.eval 0).Dom
 
 /-- **`TMIP* = RE`**, Theorem `thm:tailored_MIP*=RE` of Bowen–Chapman–Vidick, paper II
 (arXiv:2501.00173, II:1505), with "polynomial-time" relaxed to "computable" and `< 1/2` read as
-`≤ 1/2` (module docstring): there is a computable map from Turing machines to tailored games
-such that
+`≤ 1/2` (see above): there is a computable map from Turing machines to tailored games such that
 
-1. (completeness) if the machine halts on the empty input then the game has a perfect
-   Z-aligned permutation strategy commuting along edges, and
-2. (soundness) if it does not then the synchronous value of the game is at most `1/2`.
-
-This is the statement; nothing in this file proves it. -/
+1. (completeness) if the machine halts on the empty input then the game has a perfect Z-aligned
+   permutation strategy commuting along edges, and
+2. (soundness) if it does not then the synchronous value of the game is at most `1/2`. -/
 def TailoredHaltingReduction : Prop :=
   ∃ g : Nat.Partrec.Code → TailoredGameData, Computable g ∧
     ∀ c : Nat.Partrec.Code,
@@ -389,9 +332,9 @@ def TailoredHaltingReduction : Prop :=
 theorem tailored_halting_reduction : TailoredHaltingReduction := by
   sorry
 
-end TailoredGameValue
+end TailoredGames
 
-/-! ## The Aldous–Lyons conjecture
+/-! ## Part 2: the Aldous–Lyons conjecture
 
 The Aldous–Lyons conjecture (D. Aldous and R. Lyons, *Processes on unimodular random
 networks*, 2007), in the form for invariant random subgroups of free groups stated in paper I,
