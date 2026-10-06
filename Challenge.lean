@@ -194,8 +194,7 @@ canonical decider rejects malformed constraints. -/
 def Satisfies (c v : List Bool) : Prop :=
   c.length = v.length ∧ Even ((List.zipWith (· && ·) c v).count true)
 
-instance (c v : List Bool) : Decidable (Satisfies c v) := by
-  unfold Satisfies; infer_instance
+instance (c v : List Bool) : Decidable (Satisfies c v) := instDecidableAnd
 
 /-- The canonical decider (II:1757–1787) at the question pair `(x, y)`: unequal answers at a loop
 lose; both answers are well formatted; and every constraint `c ∈ L_xy(a^R b^R)` is satisfied by
@@ -205,8 +204,11 @@ def Accepts (x y : Fin (g.nV + 1)) (a b : Fin g.ansLen → Bool) : Prop :=
     ∀ e ∈ g.cons, e.1 = x.val → e.2.1 = y.val → e.2.2.1 = g.readable x a ++ g.readable y b →
       Satisfies e.2.2.2 (g.full x a ++ g.full y b ++ [true])
 
-instance (x y : Fin (g.nV + 1)) (a b : Fin g.ansLen → Bool) : Decidable (g.Accepts x y a b) := by
-  unfold Accepts WellFormatted; infer_instance
+instance (x : Fin (g.nV + 1)) (a : Fin g.ansLen → Bool) : Decidable (g.WellFormatted x a) :=
+  Nat.decidableForallFin _
+
+instance (x y : Fin (g.nV + 1)) (a b : Fin g.ansLen → Bool) : Decidable (g.Accepts x y a b) :=
+  instDecidableAnd
 
 /-- The total weight the list `w` assigns to the question pair `(x, y)`. -/
 def questionWeight (x y : ℕ) : ℕ :=
@@ -224,32 +226,55 @@ noncomputable def toGame : SynchronousGame (Fin (g.nV + 1)) (Fin g.ansLen → Bo
   μ x y :=
     if g.totalWeight = 0 then (if x = 0 ∧ y = 0 then 1 else 0)
     else (g.questionWeight x.val y.val : ℝ) / (g.totalWeight : ℝ)
+  -- The proofs inside this definition use `rw`/`exact` with named lemmas only (no `simp`,
+  -- `norm_num` or `positivity`): the comparator requires them to elaborate to the same terms
+  -- in this file's environment and in the Solution's, where the whole library is imported.
   μ_nonneg x y := by
-    split_ifs
-    · norm_num
-    · norm_num
-    · positivity
+    by_cases h : g.totalWeight = 0
+    · rw [ite_eq_left h]
+      by_cases hxy : x = 0 ∧ y = 0
+      · rw [ite_eq_left hxy]
+        exact zero_le_one
+      · rw [ite_eq_right hxy]
+    · rw [ite_eq_right h]
+      exact div_nonneg (Nat.cast_nonneg _) (Nat.cast_nonneg _)
   μ_sum_one := by
     by_cases h : g.totalWeight = 0
-    · simp only [h, ↓reduceIte]
+    · have hrw : ∀ x y : Fin (g.nV + 1),
+          (if g.totalWeight = 0 then (if x = 0 ∧ y = 0 then (1 : ℝ) else 0)
+            else (g.questionWeight x.val y.val : ℝ) / (g.totalWeight : ℝ)) =
+          if x = 0 ∧ y = 0 then 1 else 0 := fun x y => ite_eq_left h
+      rw [Finset.sum_congr rfl (fun x _ => Finset.sum_congr rfl (fun y _ => hrw x y))]
       rw [Finset.sum_eq_single (0 : Fin (g.nV + 1))]
-      · simp
+      · rw [Finset.sum_eq_single (0 : Fin (g.nV + 1))]
+        · exact ite_eq_left ⟨rfl, rfl⟩
+        · intro b _ hb
+          exact ite_eq_right (fun hc => hb hc.2)
+        · intro hmem
+          exact absurd (Finset.mem_univ _) hmem
       · intro b _ hb
-        simp [hb]
+        exact Finset.sum_eq_zero (fun y _ => ite_eq_right (fun hc => hb hc.1))
       · intro hmem
         exact absurd (Finset.mem_univ _) hmem
-    · simp only [h, ↓reduceIte]
-      have hT : (g.totalWeight : ℝ) ≠ 0 := Nat.cast_ne_zero.mpr h
+    · have hT : (g.totalWeight : ℝ) ≠ 0 := Nat.cast_ne_zero.mpr h
+      have hrw : ∀ x y : Fin (g.nV + 1),
+          (if g.totalWeight = 0 then (if x = 0 ∧ y = 0 then (1 : ℝ) else 0)
+            else (g.questionWeight x.val y.val : ℝ) / (g.totalWeight : ℝ)) =
+          (g.questionWeight x.val y.val : ℝ) / (g.totalWeight : ℝ) := fun x y => ite_eq_right h
+      rw [Finset.sum_congr rfl (fun x _ => Finset.sum_congr rfl (fun y _ => hrw x y))]
+      have hin : ∀ x : Fin (g.nV + 1),
+          (∑ y : Fin (g.nV + 1), (g.questionWeight x.val y.val : ℝ) / (g.totalWeight : ℝ)) =
+            (∑ y : Fin (g.nV + 1), (g.questionWeight x.val y.val : ℝ)) / (g.totalWeight : ℝ) :=
+        fun x => (Finset.sum_div _ _ _).symm
       have hsum : ∑ x : Fin (g.nV + 1), ∑ y : Fin (g.nV + 1),
           (g.questionWeight x.val y.val : ℝ) = (g.totalWeight : ℝ) := by
-        unfold totalWeight
-        push_cast
-        rfl
-      simp_rw [← Finset.sum_div]
-      rw [hsum, div_self hT]
+        change _ = ((∑ x : Fin (g.nV + 1), ∑ y : Fin (g.nV + 1),
+          g.questionWeight x.val y.val : ℕ) : ℝ)
+        rw [Nat.cast_sum]
+        exact Finset.sum_congr rfl (fun x _ => (Nat.cast_sum _ _).symm)
+      rw [Finset.sum_congr rfl (fun x _ => hin x), ← Finset.sum_div, hsum, div_self hT]
   D x y a b := decide (g.Accepts x y a b)
-  synchronous x a b hne := by
-    simp [Accepts, hne]
+  synchronous x a b hne := decide_eq_false fun h => hne (h.1 rfl)
 
 end TailoredGameData
 
@@ -379,8 +404,14 @@ instance (s : ℕ) : BorelSpace (SubgroupSpace s) := ⟨rfl⟩
 def conj {s : ℕ} (w : FreeGroup (Fin s)) (H : SubgroupSpace s) : SubgroupSpace s :=
   ⟨fun v => H.1 (w⁻¹ * v * w), by
     obtain ⟨h1, h2⟩ := H.2
-    refine ⟨by simpa using h1, fun v u hv hu => ?_⟩
-    simpa [mul_assoc] using h2 _ _ hv hu⟩
+    refine ⟨?_, fun v u hv hu => ?_⟩
+    · show H.1 (w⁻¹ * 1 * w) = true
+      rw [mul_one, inv_mul_cancel]
+      exact h1
+    · have h := h2 _ _ hv hu
+      show H.1 (w⁻¹ * (v * u⁻¹) * w) = true
+      rwa [mul_inv_rev, mul_inv_rev, inv_inv, mul_assoc (w⁻¹ * v) w, mul_inv_cancel_left,
+        mul_assoc w⁻¹ v (u⁻¹ * w), ← mul_assoc v u⁻¹ w, ← mul_assoc w⁻¹ (v * u⁻¹) w] at h⟩
 
 /-- The **invariant random subgroups** of `F_s`: the Borel probability measures on `Sub(F_s)`
 invariant under conjugation by every `w ∈ F_s`. -/
@@ -391,9 +422,11 @@ def IRS (s : ℕ) : Set (ProbabilityMeasure (SubgroupSpace s)) :=
 `Fin N` in which the `i`-th generator acts by the permutation `σ i`. -/
 def stab {s N : ℕ} (σ : Fin s → Equiv.Perm (Fin N)) (x : Fin N) : SubgroupSpace s :=
   ⟨fun w => decide (FreeGroup.lift σ w x = x), by
-    refine ⟨by simp, fun v w hv hw => ?_⟩
-    simp only [decide_eq_true_eq] at hv hw ⊢
-    rw [map_mul, map_inv, Equiv.Perm.mul_apply, Equiv.Perm.inv_eq_iff_eq.mpr hw.symm, hv]⟩
+    refine ⟨decide_eq_true (by rw [map_one, Equiv.Perm.one_apply]), fun v w hv hw => ?_⟩
+    have hv' := of_decide_eq_true hv
+    have hw' := of_decide_eq_true hw
+    exact decide_eq_true (by
+      rw [map_mul, map_inv, Equiv.Perm.mul_apply, Equiv.Perm.inv_eq_iff_eq.mpr hw'.symm, hv'])⟩
 
 /-- The **finitely described** invariant random subgroups of `F_s`: for some `N ≥ 1` and some
 action of `F_s` on `Fin N`, the law of the stabilizer of a uniformly random point,
